@@ -15,7 +15,7 @@ from data_base.db import get_or_create_user
 from data_base.models import Order, User
 from datetime import datetime
 from dotenv import load_dotenv
-from aiogram.types import LabeledPrice, PreCheckoutQuery
+from aiogram.types import LabeledPrice, PreCheckoutQuery, LinkPreviewOptions
 
 
 load_dotenv()
@@ -129,8 +129,9 @@ def get_order_detail_keyboard(category, order_id=None, status=None):
 async def cmd_start(message: Message, state: FSMContext):
     await state.clear()
     await message.answer(
-        "👋 ЭкоПоток - вынесем ваш мусор за 10 минут!",
-        reply_markup=get_main_inline_keyboard(),
+        "👋 ЭкоПоток - вынесем ваш мусор за 10 минут!\n\n" \
+        "Если у Вас возникли какие-либо проблемы обратитесь в нашу <a href='t.me/morz1ck'>техническую поддержку.</a>",
+        reply_markup=get_main_inline_keyboard(), parse_mode='HTML', disable_web_page_preview=True
     )
 
 
