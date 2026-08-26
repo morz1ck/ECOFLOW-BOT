@@ -4,6 +4,13 @@ from datetime import datetime
 
 Base = declarative_base()
 
+class Price(Base):
+    __tablename__ = "prices"
+    id = Column(Integer, primary_key=True)
+    key = Column(String, unique=True, nullable=False)
+    value = Column(Integer, nullable=False)  # цена в рублях
+    label = Column(String, nullable=False)   # человекочитаемое название для админа
+
 class User(Base):
     __tablename__ = "users"
     id = Column(Integer, primary_key=True)
@@ -23,6 +30,7 @@ class Order(Base):
     user_id = Column(Integer, ForeignKey("users.id"))
     order_type = Column(String)          # order_now / order_later
     pickup_time = Column(String, nullable=True)
+    street = Column(String)
     house_number = Column(String)
     entrance = Column(String)
     floor = Column(String)

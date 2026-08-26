@@ -16,6 +16,8 @@ from data_base.models import Order, User
 from datetime import datetime
 from dotenv import load_dotenv
 from aiogram.types import LabeledPrice, PreCheckoutQuery, LinkPreviewOptions
+from data_base.models import Order, User, Price
+from data_base.crud import get_price, set_price, get_all_prices
 
 
 load_dotenv()
@@ -150,8 +152,8 @@ async def process_order_type(callback: CallbackQuery, state: FSMContext):
     else:  # order_now
         await state.set_state(Form.address_full)
         await callback.message.answer(
-            "Укажите номер дома, подъезд, этаж и номер квартиры одним сообщением через запятую.\n"
-            "Например: «1, 2, 5, 34»"
+            "Укажите улицу, номер дома, подъезд, этаж и номер квартиры одним сообщением через запятую.\n"
+            "Например: «ул. Голландская, 1, 2, 5, 34»"
         )
 
     await callback.answer()
@@ -162,8 +164,8 @@ async def process_time(message: Message, state: FSMContext):
     await state.update_data(pickup_time=message.text)
     await state.set_state(Form.address_full)
     await message.answer(
-        "Укажите номер дома, подъезд, этаж и номер квартиры одним сообщением через запятую.\n"
-        "Например: «1, 2, 5, 34»"
+        "Укажите улицу, номер дома, подъезд, этаж и номер квартиры одним сообщением через запятую.\n"
+        "Например: «ул. Голландская, 1, 2, 5, 34»"
     )
 
 
@@ -195,25 +197,21 @@ async def process_my_orders(callback: CallbackQuery):
 
     await callback.answer()
 
-
-@router.callback_query(F.data == 'tariffs') #todo: добавить кнопку подписки
+#todo: добавить кнопку оформление подписки: показывать проверку по наличию подписки (нет - показать, да - не показать)
+@router.callback_query(F.data == 'tariffs')
 async def process_tariffs(callback: CallbackQuery):
+    with SessionLocal() as session:
+        once_price = get_price(session, 'single_order')
+        sub_price = get_price(session, 'subscription_month')
+
     await callback.message.answer(
         '💰 <b>Тарифы и подписки сервиса</b>\n\n' \
         '<b>Акция в честь старта сервиса!</b>\n' \
         'Тарификация фиксированная на все виды услуг (до 30 сентября 2026)\n\n' \
-        '<b>Базовый тариф</b>\n' \
-        'С учетом лифта / быстрый вынос: 90₽\n' \
-        'С учетом лифта / ко времени: 90₽\n\n' \
-        'Без лифта (выше 5 этажа) / не срочно: 90₽\n' \
-        'Без лифта (до 5 этажа) / не срочно: 90₽\n' \
-        'Без лифта (выше 5 этажа) / срочно: 90₽\n' \
-        'Без лифта (до 5 этажа) / срочно: 90₽\n\n' \
-        '<b>Надбавки:</b>\n' \
-        'Срочно (в течении 15 минут): +50₽ (не действует во время акции)\n\n' \
-        '‼️ Ставка на все тарифы х2 в плохую погоду (дождь, метель)\n\n' \
+        '<b>Базовый тариф</b>\n'
+        f'Фиксированная цена за один вынос: <b>{once_price}</b>\n\n' \
         '📦 Месячная подписка <b>«Пакет в день»</b>\n' \
-        '1990₽ / месяц — вынос по подписке от 66-70₽\n\n' \
+        f'{sub_price}₽ / месяц — вынос по подписке от {sub_price // 31}₽\n\n' \
         'Оформи месячную подписку и на ежедневной основе курьер будет забирать Ваш мусор. Достаточно нажать кнопку <b>«Вынести мусор сейчас»</b>',
         parse_mode='html',
     )
@@ -238,15 +236,15 @@ async def process_how_it_works(callback: CallbackQuery):
 async def process_address_full(message: Message, state: FSMContext):
     parts = [p.strip() for p in message.text.split(",")]
 
-    if len(parts) != 4:
+    if len(parts) != 5:
         await message.answer(
-            "Не понял формат. Введите через запятую: «дом, подъезд, этаж, квартира», "
-            "например «1, 2, 5, 34»"
+            "Не понял формат. Введите через запятую: «улица, дом, подъезд, этаж, квартира», "
+            "например «ул. Голландская, 1, 2, 5, 34»"
         )
         return
 
-    house_number, entrance, floor, room_number = parts
-    await state.update_data(house_number=house_number, entrance=entrance, floor=floor, room_number=room_number)
+    street, house_number, entrance, floor, room_number = parts
+    await state.update_data(street=street, house_number=house_number, entrance=entrance, floor=floor, room_number=room_number)
     await state.set_state(Form.door_or_concierge)
     await message.answer("Где оставить пакет?", reply_markup=get_door_keyboard())
 
@@ -255,6 +253,9 @@ async def process_address_full(message: Message, state: FSMContext):
 async def process_door_or_concierge(callback: CallbackQuery, state: FSMContext):
     await state.update_data(door_or_concierge=callback.data)
     await state.set_state(Form.confirm)
+
+    with SessionLocal() as session:
+        price = get_price(session, "single_order")
 
     data = await state.get_data()
     order_type_text = "сейчас" if data["order_type"] == "order_now" else "на время"
@@ -272,10 +273,11 @@ async def process_door_or_concierge(callback: CallbackQuery, state: FSMContext):
     if data["order_type"] == "order_later":
         text += f"Время: {data['pickup_time']}\n"
     text += (
+        f"Улица: {data['street']}\n"
         f"Дом: №{data['house_number']}, подъезд: {data['entrance']}, "
         f"этаж: {data['floor']}, кв: {data['room_number']}\n"
         f"Куда положить: {door_text}\n\n"
-        f"Стоимость: 150₽"
+        f"Стоимость: {price}₽"
     )
 
     await callback.message.answer(text, reply_markup=get_confirm_keyboard())
@@ -285,6 +287,10 @@ async def process_door_or_concierge(callback: CallbackQuery, state: FSMContext):
 @router.callback_query(Form.confirm, F.data == "confirm_order")
 async def process_confirm(callback: CallbackQuery, state: FSMContext):
     data = await state.get_data()
+
+    with SessionLocal() as session:
+        price = get_price(session, "single_order")
+
 
     door_text = {
         "door": "у двери",
@@ -307,7 +313,7 @@ async def process_confirm(callback: CallbackQuery, state: FSMContext):
                     "description": "Вынос мусора",
                     "quantity": "1.00",
                     "amount": {
-                        "value": "150.00",
+                        "value": f"{price:.2f}",
                         "currency": "RUB"
                     },
                     "vat_code": 1
@@ -336,7 +342,7 @@ async def process_confirm(callback: CallbackQuery, state: FSMContext):
         payload="order_payment",
         provider_token=YOOKASSA_TOKEN,
         currency="RUB",
-        prices=[LabeledPrice(label="Вынос мусора", amount=150 * 100)],
+        prices=[LabeledPrice(label="Вынос мусора", amount=price * 100)],
         need_phone_number=True,
         send_phone_number_to_provider=True,
         provider_data=provider_data,
@@ -352,6 +358,9 @@ async def process_pre_checkout(pre_checkout_query: PreCheckoutQuery):
 async def process_successful_payment(message: Message, state: FSMContext):
     data = await state.get_data()
     order_type_text = "сейчас" if data["order_type"] == "order_now" else "на время"
+
+    with SessionLocal() as session:
+        price = get_price(session, "single_order")
 
     door_text = {
         "door": "у двери",
@@ -370,13 +379,14 @@ async def process_successful_payment(message: Message, state: FSMContext):
             user_id=user.id,
             order_type=data["order_type"],
             pickup_time=data.get("pickup_time"),
+            street = data['street'],
             house_number=data["house_number"],
             entrance=data["entrance"],
             floor=data["floor"],
             room_number=data["room_number"],
             door_or_concierge=data["door_or_concierge"],
             status="new",
-            price=150,
+            price=price,
             is_paid=True,
         )
         session.add(order)
@@ -631,3 +641,56 @@ async def complete_order(callback: CallbackQuery):
         )
 
     await callback.answer("Заказ завершён ✅")
+
+
+def get_change_prices_keyboard(prices):
+    buttons = []
+    for p in prices:
+        buttons.append([InlineKeyboardButton(text=f"{p.label}: {p.value}₽", callback_data=f"changeprice:{p.key}")])
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+@router.message(Command("changeprices"))
+async def change_prices_command(message: Message):
+    if message.from_user.id not in ADMIN_ID:
+        return
+
+    with SessionLocal() as session:
+        prices = get_all_prices(session)
+
+    await message.answer("Выберите позицию для изменения цены:", reply_markup=get_change_prices_keyboard(prices))
+
+
+@router.callback_query(F.data.startswith("changeprice:"))
+async def change_price_select(callback: CallbackQuery, state: FSMContext):
+    if callback.from_user.id not in ADMIN_ID:
+        await callback.answer("Недостаточно прав", show_alert=True)
+        return
+
+    key = callback.data.split(":")[1]
+
+    with SessionLocal() as session:
+        price = session.query(Price).filter_by(key=key).first()
+
+    await state.update_data(price_key=key)
+    await state.set_state(Form.new_price)
+    await callback.message.answer(f"Введите новую цену для «{price.label}» (текущая: {price.value}₽):")
+    await callback.answer()
+
+
+@router.message(Form.new_price)
+async def change_price_apply(message: Message, state: FSMContext):
+    data = await state.get_data()
+    key = data["price_key"]
+
+    try:
+        new_value = int(message.text)
+    except ValueError:
+        await message.answer("Введите целое число, например 150")
+        return
+
+    with SessionLocal() as session:
+        set_price(session, key, new_value)
+        price = session.query(Price).filter_by(key=key).first()
+
+    await message.answer(f"✅ Цена «{price.label}» обновлена: {new_value}₽")
+    await state.clear()
