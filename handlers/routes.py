@@ -25,7 +25,7 @@ YOOKASSA_TOKEN = os.getenv("YOOKASSA_TEST_LIVE")
 
 router = Router()
 
-ADMIN_ID = [1097519866, 1473358975]
+ADMIN_ID = [1097519866, 1473358975, 6511035077]
 
 STREETS = ['ул. Голландская', 'ул. Ясная', 'ул. Тюльпанов']
 
