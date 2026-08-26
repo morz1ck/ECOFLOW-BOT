@@ -129,8 +129,10 @@ def get_order_detail_keyboard(category, order_id=None, status=None):
 async def cmd_start(message: Message, state: FSMContext):
     await state.clear()
     await message.answer(
-        "👋 ЭкоПоток - вынесем ваш мусор за 10 минут!\n\n" \
-        "Если у Вас возникли какие-либо проблемы обратитесь в нашу <a href='t.me/morz1ck'>техническую поддержку.</a>",
+        "👋🏾 Привет! Мы — ЭкоПоток! Сервис, который возвращает Вам время!\n\n" \
+        "✅ Вынесем за Вас мусор в любое удобное время за пару кликов!\n\n" \
+        "🕖 Чтобы воспользоваться услугой прямо сейчас, нажмите на кнопку «Вынести мусор сейчас», и следуйте инструкции.\n\n" \
+        "‼️ Если у Вас возникли вопросы или проблемы с сервисом, обратитесь в нашу <a href='t.me/morz1ck'>поддержку</a>.",
         reply_markup=get_main_inline_keyboard(), parse_mode='HTML', disable_web_page_preview=True
     )
 
