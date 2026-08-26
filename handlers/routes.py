@@ -17,7 +17,7 @@ from datetime import datetime
 from dotenv import load_dotenv
 from aiogram.types import LabeledPrice, PreCheckoutQuery, LinkPreviewOptions
 from data_base.models import Order, User, Price
-from data_base.crud import get_price, set_price, get_all_prices
+from data_base.crud import get_price, set_price, get_all_prices, has_saved_address
 
 
 load_dotenv()
@@ -26,6 +26,8 @@ YOOKASSA_TOKEN = os.getenv("YOOKASSA_TEST_LIVE")
 router = Router()
 
 ADMIN_ID = [1097519866, 1473358975]
+
+STREETS = ['ул. Голландская', 'ул. Ясная', 'ул. Тюльпанов']
 
 def get_main_inline_keyboard():
     return InlineKeyboardMarkup(
@@ -91,6 +93,13 @@ def get_orders_list_keyboard(orders, category):
     buttons.append([InlineKeyboardButton(text="🔙 В начало списка", callback_data="admin_orders_menu")])
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
+def get_streets_keyboard():
+    buttons = [
+        [InlineKeyboardButton(text=street, callback_data=f"street:{street}")]
+        for street in STREETS
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
+
 
 def get_order_detail_keyboard(category, order_id=None, status=None):
     buttons = []
@@ -125,6 +134,13 @@ def get_order_detail_keyboard(category, order_id=None, status=None):
 
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
+def get_address_confirm_keyboard():
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="✅ Подтвердить", callback_data="address_confirm")],
+            [InlineKeyboardButton(text="📝 Указать другой", callback_data="address_change")],
+        ]
+    )
 
 
 @router.message(CommandStart())
@@ -134,10 +150,31 @@ async def cmd_start(message: Message, state: FSMContext):
         "👋🏾 Привет! Мы — ЭкоПоток! Сервис, который возвращает Вам время!\n\n" \
         "✅ Вынесем за Вас мусор в любое удобное время за пару кликов!\n\n" \
         "🕖 Чтобы воспользоваться услугой прямо сейчас, нажмите на кнопку «Вынести мусор сейчас», и следуйте инструкции.\n\n" \
-        "‼️ Если у Вас возникли вопросы или проблемы с сервисом, обратитесь в нашу <a href='t.me/morz1ck'>поддержку</a>.",
+        "‼️ Если у Вас возникли вопросы или проблемы с сервисом, обратитесь в нашу <a href='t.me/ecoflowsupport'>поддержку</a>.",
         reply_markup=get_main_inline_keyboard(), parse_mode='HTML', disable_web_page_preview=True
     )
+async def proceed_to_address_or_door(message: Message, telegram_id: int, state: FSMContext):
+    with SessionLocal() as session:
+        user = session.query(User).filter_by(telegram_id=telegram_id).first()
 
+    if user and has_saved_address(user):
+        await state.update_data(
+            street=user.street,
+            house_number=user.house_number,
+            entrance=user.entrance,
+            floor=user.floor,
+            room_number=user.room_number,
+        )
+        await state.set_state(Form.address_confirm)
+        await message.answer(
+            f"Это ваш адрес?\n\n"
+            f"{user.street}, д.{user.house_number}, подъезд {user.entrance}, "
+            f"этаж {user.floor}, кв. {user.room_number}",
+            reply_markup=get_address_confirm_keyboard(),
+        )
+    else:
+        await state.set_state(Form.street)
+        await message.answer("Выберите улицу:", reply_markup=get_streets_keyboard())
 
 @router.callback_query(F.data.in_(["order_now", "order_later"]))
 async def process_order_type(callback: CallbackQuery, state: FSMContext):
@@ -149,24 +186,50 @@ async def process_order_type(callback: CallbackQuery, state: FSMContext):
             "Укажите время, когда необходимо забрать пакет.\n"
             "Например: 14:00."
         )
-    else:  # order_now
-        await state.set_state(Form.address_full)
-        await callback.message.answer(
-            "Укажите улицу, номер дома, подъезд, этаж и номер квартиры одним сообщением через запятую.\n"
-            "Например: «ул. Голландская, 1, 2, 5, 34»"
-        )
+        return
 
+    await proceed_to_address_or_door(callback.message, callback.from_user.id, state)
     await callback.answer()
 
 
 @router.message(Form.time)
 async def process_time(message: Message, state: FSMContext):
     await state.update_data(pickup_time=message.text)
-    await state.set_state(Form.address_full)
-    await message.answer(
-        "Укажите улицу, номер дома, подъезд, этаж и номер квартиры одним сообщением через запятую.\n"
-        "Например: «ул. Голландская, 1, 2, 5, 34»"
+    await proceed_to_address_or_door(message, message.from_user.id, state)  
+
+@router.callback_query(Form.address_confirm, F.data == "address_confirm")
+async def process_address_confirm(callback: CallbackQuery, state: FSMContext):
+    await state.set_state(Form.door_or_concierge)
+    await callback.message.edit_text(callback.message.text + "\n\n✅ Адрес подтверждён")
+    await callback.message.answer("Где оставить пакет?", reply_markup=get_door_keyboard())
+    await callback.answer()
+
+
+@router.callback_query(Form.address_confirm, F.data == "address_change")
+async def process_address_change(callback: CallbackQuery, state: FSMContext):
+    await state.set_state(Form.street)
+    await callback.message.edit_text(callback.message.text + "\n\n📝 Указываем новый адрес")
+    await callback.message.answer("Выберите улицу:", reply_markup=get_streets_keyboard())
+    await callback.answer()
+
+@router.message(Form.time)
+async def process_time(message: Message, state: FSMContext):
+    await state.update_data(pickup_time=message.text)
+    await state.set_state(Form.street)
+    await message.answer("Выберите улицу:", reply_markup=get_streets_keyboard())
+
+@router.callback_query(Form.street, F.data.startswith("street:"))
+async def process_street(callback: CallbackQuery, state: FSMContext):
+    street = callback.data.split(":", 1)[1]
+    await state.update_data(street=street)
+    await state.set_state(Form.address_rest)
+
+    await callback.message.edit_text(f"Улица: {street} ✅")
+    await callback.message.answer(
+        "Укажите дом, подъезд, этаж и номер квартиры одним сообщением через запятую.\n"
+        "Например: «1, 2, 5, 34»"
     )
+    await callback.answer()
 
 
 @router.callback_query(F.data == "my_orders")
@@ -232,19 +295,24 @@ async def process_how_it_works(callback: CallbackQuery):
     await callback.answer()
 
 
-@router.message(Form.address_full)
-async def process_address_full(message: Message, state: FSMContext):
+@router.message(Form.address_rest)
+async def process_address_rest(message: Message, state: FSMContext):
     parts = [p.strip() for p in message.text.split(",")]
 
-    if len(parts) != 5:
+    if len(parts) != 4:
         await message.answer(
-            "Не понял формат. Введите через запятую: «улица, дом, подъезд, этаж, квартира», "
-            "например «ул. Голландская, 1, 2, 5, 34»"
+            "Не понял формат. Введите через запятую: «дом, подъезд, этаж, квартира», "
+            "например «1, 2, 5, 34»"
         )
         return
 
-    street, house_number, entrance, floor, room_number = parts
-    await state.update_data(street=street, house_number=house_number, entrance=entrance, floor=floor, room_number=room_number)
+    house_number, entrance, floor, room_number = parts
+    await state.update_data(
+        house_number=house_number,
+        entrance=entrance,
+        floor=floor,
+        room_number=room_number,
+    )
     await state.set_state(Form.door_or_concierge)
     await message.answer("Где оставить пакет?", reply_markup=get_door_keyboard())
 
@@ -357,29 +425,37 @@ async def process_pre_checkout(pre_checkout_query: PreCheckoutQuery):
 @router.message(F.successful_payment)
 async def process_successful_payment(message: Message, state: FSMContext):
     data = await state.get_data()
+    print("DEBUG STATE DATA:", data)   # ← добавили
+
     order_type_text = "сейчас" if data["order_type"] == "order_now" else "на время"
 
     with SessionLocal() as session:
         price = get_price(session, "single_order")
-
-    door_text = {
-        "door": "у двери",
-        "in_person": "отдать лично",
-        "concierge": "у консьержа",
-    }.get(data["door_or_concierge"], data["door_or_concierge"])
-
-    with SessionLocal() as session:
-        user = get_or_create_user(
-            session,
+        user = get_or_create_user(session,
             telegram_id=message.from_user.id,
-            username=message.from_user.username,
-        )
+            username=message.from_user.username)
+
+        print("DEBUG USER BEFORE:", user.telegram_id, user.street)  # ← добавили
+
+        user.street = data["street"]
+        user.house_number = data["house_number"]
+        user.entrance = data["entrance"]
+        user.floor = data["floor"]
+        user.room_number = data["room_number"]
+
+        print("DEBUG USER AFTER ASSIGN:", user.telegram_id, user.street)  # ← добавили
+
+        door_text = {
+            "door": "у двери",
+            "in_person": "отдать лично",
+            "concierge": "у консьержа",
+        }.get(data["door_or_concierge"], data["door_or_concierge"])
 
         order = Order(
             user_id=user.id,
             order_type=data["order_type"],
             pickup_time=data.get("pickup_time"),
-            street = data['street'],
+            street=data["street"],
             house_number=data["house_number"],
             entrance=data["entrance"],
             floor=data["floor"],
@@ -392,6 +468,8 @@ async def process_successful_payment(message: Message, state: FSMContext):
         session.add(order)
         session.commit()
         order_id = order.id
+
+        print("DEBUG USER AFTER COMMIT:", user.telegram_id, user.street)  # ← добавили
 
     admin_text = (
         f"📥 Новый заказ №{order_id} (оплачен ✅)\n"

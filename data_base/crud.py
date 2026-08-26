@@ -17,3 +17,12 @@ def set_price(session, key: str, new_value: int):
 
 def get_all_prices(session):
     return session.query(Price).all()
+
+def has_saved_address(user) -> bool:
+    return all([
+        user.street,
+        user.house_number,
+        user.entrance,
+        user.floor,
+        user.room_number,
+    ])

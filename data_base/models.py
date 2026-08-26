@@ -16,13 +16,15 @@ class User(Base):
     id = Column(Integer, primary_key=True)
     telegram_id = Column(Integer, unique=True, nullable=False)
     username = Column(String, nullable=True)
+
+    street = Column(String, nullable=True)
     house_number = Column(String, nullable=True)
     entrance = Column(String, nullable=True)
     floor = Column(String, nullable=True)
     room_number = Column(String, nullable=True)
+
     is_subscribed = Column(Boolean, default=False)
     subscription_until = Column(DateTime, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
 
 class Order(Base):
     __tablename__ = "orders"
