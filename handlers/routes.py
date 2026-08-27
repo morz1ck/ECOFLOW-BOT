@@ -17,7 +17,10 @@ from datetime import datetime
 from dotenv import load_dotenv
 from aiogram.types import LabeledPrice, PreCheckoutQuery, LinkPreviewOptions
 from data_base.models import Order, User, Price
-from data_base.crud import get_price, set_price, get_all_prices, has_saved_address
+from data_base.crud import get_price, set_price, get_all_prices, has_saved_address, has_active_subscription
+from datetime import datetime, timedelta
+from aiogram.exceptions import TelegramForbiddenError, TelegramBadRequest
+import asyncio
 
 
 load_dotenv()
@@ -37,6 +40,7 @@ def get_main_inline_keyboard():
             [InlineKeyboardButton(text="📦 Мои заказы", callback_data="my_orders")],
             [InlineKeyboardButton(text="ℹ️ Как это работает", callback_data="how_it_works")],
             [InlineKeyboardButton(text='💰 Тарифы', callback_data='tariffs')],
+            [InlineKeyboardButton(text='📦 Подписка', callback_data='subscription_status')],
         ]
     )
 
@@ -142,6 +146,16 @@ def get_address_confirm_keyboard():
         ]
     )
 
+def get_tariffs_keyboard(subscribed: bool):
+    if subscribed:
+        return None
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="📦 Оформить подписку", callback_data="buy_subscription")]
+        ]
+    )
+
+
 
 @router.message(CommandStart())
 async def cmd_start(message: Message, state: FSMContext):
@@ -153,6 +167,30 @@ async def cmd_start(message: Message, state: FSMContext):
         "‼️ Если у Вас возникли вопросы или проблемы с сервисом, обратитесь в нашу <a href='t.me/ecoflowsupport'>поддержку</a>.",
         reply_markup=get_main_inline_keyboard(), parse_mode='HTML', disable_web_page_preview=True
     )
+
+@router.callback_query(F.data == 'subscription_status')
+async def subscription_status(callback: CallbackQuery):
+    with SessionLocal() as session:
+        user = session.query(User).filter_by(telegram_id=callback.from_user.id).first()
+        subscribed = has_active_subscription(user)
+
+    if subscribed:
+        until = user.subscription_until.strftime('%d.%m.%Y')
+        await callback.message.answer(f"✅ У вас активна подписка до {until}")
+    else:
+        with SessionLocal() as session:
+            sub_price = get_price(session, "subscription_month")
+        keyboard = InlineKeyboardMarkup(
+            inline_keyboard=[[InlineKeyboardButton(text="📦 Купить подписку", callback_data="buy_subscription")]]
+        )
+        await callback.message.answer(
+            f"У вас пока нет подписки.\n\n📦 Месячная подписка — {sub_price}₽",
+            reply_markup=keyboard,
+        )
+
+    await callback.answer()
+
+
 async def proceed_to_address_or_door(message: Message, telegram_id: int, state: FSMContext):
     with SessionLocal() as session:
         user = session.query(User).filter_by(telegram_id=telegram_id).first()
@@ -266,20 +304,26 @@ async def process_tariffs(callback: CallbackQuery):
     with SessionLocal() as session:
         once_price = get_price(session, 'single_order')
         sub_price = get_price(session, 'subscription_month')
+        user = session.query(User).filter_by(telegram_id=callback.from_user.id).first()
+        subscribed = has_active_subscription(user)
 
-    await callback.message.answer(
-        '💰 <b>Тарифы и подписки сервиса</b>\n\n' \
-        '<b>Акция в честь старта сервиса!</b>\n' \
-        'Тарификация фиксированная на все виды услуг (до 30 сентября 2026)\n\n' \
+    text = (
+        '💰 <b>Тарифы и подписки сервиса</b>\n\n'
+        '<b>Акция в честь старта сервиса!</b>\n'
+        'Тарификация фиксированная на все виды услуг (до 30 сентября 2026)\n\n'
         '<b>Базовый тариф</b>\n'
-        f'Фиксированная цена за один вынос: <b>{once_price}</b>\n\n' \
-        '📦 Месячная подписка <b>«Пакет в день»</b>\n' \
-        f'{sub_price}₽ / месяц — вынос по подписке от {sub_price // 31}₽\n\n' \
-        'Оформи месячную подписку и на ежедневной основе курьер будет забирать Ваш мусор. Достаточно нажать кнопку <b>«Вынести мусор сейчас»</b>',
-        parse_mode='html',
+        f'Фиксированная цена за один вынос: <b>{once_price}₽</b>\n\n'
+        '📦 Месячная подписка <b>«Пакет в день»</b>\n'
+        f'{sub_price}₽ / месяц — вынос по подписке от {sub_price // 31}₽\n\n'
+        'Оформи месячную подписку и на ежедневной основе курьер будет забирать Ваш мусор.'
     )
-    await callback.answer()
 
+    if subscribed:
+        until = user.subscription_until.strftime('%d.%m.%Y')
+        text += f'\n\n✅ У вас активна подписка до {until}'
+
+    await callback.message.answer(text, parse_mode='html', reply_markup=get_tariffs_keyboard(subscribed))
+    await callback.answer()
 
 @router.callback_query(F.data == "how_it_works")
 async def process_how_it_works(callback: CallbackQuery):
@@ -294,6 +338,100 @@ async def process_how_it_works(callback: CallbackQuery):
     )
     await callback.answer()
 
+@router.callback_query(F.data == "buy_subscription")
+async def buy_subscription(callback: CallbackQuery):
+    with SessionLocal() as session:
+        sub_price = get_price(session, "subscription_month")
+
+    provider_data = json.dumps({
+        "receipt": {
+            "items": [
+                {
+                    "description": "Подписка ЭкоПоток на месяц",
+                    "quantity": "1.00",
+                    "amount": {"value": f"{sub_price:.2f}", "currency": "RUB"},
+                    "vat_code": 1
+                }
+            ]
+        }
+    })
+
+    await callback.bot.send_invoice(
+        chat_id=callback.from_user.id,
+        title="Подписка ЭкоПоток на месяц",
+        description="Безлимитный вынос мусора на 30 дней — до 1 раза в день",
+        payload="subscription_payment",
+        provider_token=YOOKASSA_TOKEN,
+        currency="RUB",
+        prices=[LabeledPrice(label="Подписка на месяц", amount=sub_price * 100)],
+        need_phone_number=True,
+        send_phone_number_to_provider=True,
+        provider_data=provider_data,
+    )
+    await callback.answer()
+
+async def finalize_order(bot, telegram_id: int, username: str, data: dict, is_paid: bool, price: int):
+    with SessionLocal() as session:
+        user = get_or_create_user(session, telegram_id=telegram_id, username=username)
+
+        user.street = data["street"]
+        user.house_number = data["house_number"]
+        user.entrance = data["entrance"]
+        user.floor = data["floor"]
+        user.room_number = data["room_number"]
+
+        order = Order(
+            user_id=user.id,
+            order_type=data["order_type"],
+            pickup_time=data.get("pickup_time"),
+            street=data["street"],
+            house_number=data["house_number"],
+            entrance=data["entrance"],
+            floor=data["floor"],
+            room_number=data["room_number"],
+            door_or_concierge=data["door_or_concierge"],
+            status="new",
+            price=price,
+            is_paid=is_paid,
+        )
+        session.add(order)
+        session.commit()
+        order_id = order.id
+
+    order_type_text = "сейчас" if data["order_type"] == "order_now" else "на время"
+    door_text = {
+        "door": "у двери",
+        "in_person": "отдать лично",
+        "concierge": "у консьержа",
+    }.get(data["door_or_concierge"], data["door_or_concierge"])
+
+    paid_label = "оплачен ✅" if is_paid else "по подписке 📦"
+    admin_text = (
+        f"📥 Новый заказ №{order_id} ({paid_label})\n"
+        f"Клиент: @{username or telegram_id}\n"
+        f"Тип: {order_type_text}\n"
+    )
+    if data["order_type"] == "order_later":
+        admin_text += f"Время: {data['pickup_time']}\n"
+    admin_text += (
+        f"Дом: № {data['house_number']}, подъезд: {data['entrance']}, "
+        f"этаж: {data['floor']}, кв: {data['room_number']}\n"
+        f"Куда положить: {door_text}"
+    )
+
+    admin_messages = {}
+    for admin_id in ADMIN_ID:
+        sent_message = await bot.send_message(
+            admin_id, admin_text, reply_markup=get_confirm_order_keyboard(order_id)
+        )
+        admin_messages[str(admin_id)] = sent_message.message_id
+
+    with SessionLocal() as session:
+        order = session.query(Order).filter_by(id=order_id).first()
+        order.admin_messages = json.dumps(admin_messages)
+        session.commit()
+
+    return order_id
 
 @router.message(Form.address_rest)
 async def process_address_rest(message: Message, state: FSMContext):
@@ -320,24 +458,21 @@ async def process_address_rest(message: Message, state: FSMContext):
 @router.callback_query(Form.door_or_concierge, F.data.in_(["door", "in_person", "concierge"]))
 async def process_door_or_concierge(callback: CallbackQuery, state: FSMContext):
     await state.update_data(door_or_concierge=callback.data)
-    await state.set_state(Form.confirm)
 
     with SessionLocal() as session:
         price = get_price(session, "single_order")
+        user = session.query(User).filter_by(telegram_id=callback.from_user.id).first()
+        subscribed = has_active_subscription(user)
 
     data = await state.get_data()
     order_type_text = "сейчас" if data["order_type"] == "order_now" else "на время"
-
     door_text = {
         "door": "у двери",
         "in_person": "отдать лично",
         "concierge": "у консьержа",
     }.get(data["door_or_concierge"], data["door_or_concierge"])
 
-    text = (
-        f"Проверьте заказ:\n"
-        f"Тип: {order_type_text}\n"
-    )
+    text = f"Проверьте заказ:\nТип: {order_type_text}\n"
     if data["order_type"] == "order_later":
         text += f"Время: {data['pickup_time']}\n"
     text += (
@@ -345,10 +480,17 @@ async def process_door_or_concierge(callback: CallbackQuery, state: FSMContext):
         f"Дом: №{data['house_number']}, подъезд: {data['entrance']}, "
         f"этаж: {data['floor']}, кв: {data['room_number']}\n"
         f"Куда положить: {door_text}\n\n"
-        f"Стоимость: {price}₽"
     )
 
-    await callback.message.answer(text, reply_markup=get_confirm_keyboard())
+    if subscribed:
+        text += "📦 У вас активна подписка — вынос бесплатный"
+        await state.set_state(Form.confirm)
+        await callback.message.answer(text, reply_markup=get_confirm_keyboard())
+    else:
+        text += f"Стоимость: {price}₽"
+        await state.set_state(Form.confirm)
+        await callback.message.answer(text, reply_markup=get_confirm_keyboard())
+
     await callback.answer()
 
 
@@ -358,7 +500,24 @@ async def process_confirm(callback: CallbackQuery, state: FSMContext):
 
     with SessionLocal() as session:
         price = get_price(session, "single_order")
+        user = session.query(User).filter_by(telegram_id=callback.from_user.id).first()
+        subscribed = has_active_subscription(user)
 
+    await callback.message.edit_reply_markup(reply_markup=None)
+
+    if subscribed:
+        await finalize_order(
+            bot=callback.bot,
+            telegram_id=callback.from_user.id,
+            username=callback.from_user.username,
+            data=data,
+            is_paid=False,
+            price=price,
+        )
+        await callback.message.answer("Заказ создан по подписке ✅ Ожидайте подтверждения курьера ⏳")
+        await state.clear()
+        await callback.answer()
+        return
 
     door_text = {
         "door": "у двери",
@@ -367,42 +526,21 @@ async def process_confirm(callback: CallbackQuery, state: FSMContext):
     }.get(data["door_or_concierge"], data["door_or_concierge"])
 
     order_type_text = "сейчас" if data["order_type"] == "order_now" else "на время"
-
     description = f"{order_type_text}, {door_text}"
     if data["order_type"] == "order_later":
         description += f", время: {data['pickup_time']}"
 
-    await callback.message.edit_reply_markup(reply_markup=None)
-
     provider_data = json.dumps({
         "receipt": {
-            "items": [
-                {
-                    "description": "Вынос мусора",
-                    "quantity": "1.00",
-                    "amount": {
-                        "value": f"{price:.2f}",
-                        "currency": "RUB"
-                    },
-                    "vat_code": 1
-                }
-            ]
+            "items": [{
+                "description": "Вынос мусора",
+                "quantity": "1.00",
+                "amount": {"value": f"{price:.2f}", "currency": "RUB"},
+                "vat_code": 1
+            }]
         }
     })
 
-    """ print("DEBUG SEND_INVOICE:", {
-        "chat_id": callback.from_user.id, 
-        "title": "Вынос мусора 🗑",
-        "description": description,
-        "payload": "order_payment",
-        "provider_token": YOOKASSA_TOKEN,
-        "currency": "RUB",
-        "prices": [{"label": "Вынос мусора", "amount": 150 * 100}],
-        "need_phone_number": True,
-        "send_phone_number_to_provider": True,
-        "provider_data": provider_data,
-    })"""
-    
     await callback.bot.send_invoice(
         chat_id=callback.from_user.id,
         title="Вынос мусора 🗑",
@@ -424,77 +562,34 @@ async def process_pre_checkout(pre_checkout_query: PreCheckoutQuery):
 
 @router.message(F.successful_payment)
 async def process_successful_payment(message: Message, state: FSMContext):
+    payload = message.successful_payment.invoice_payload
     data = await state.get_data()
-    print("DEBUG STATE DATA:", data)   # ← добавили
 
-    order_type_text = "сейчас" if data["order_type"] == "order_now" else "на время"
+    if payload == "subscription_payment":
+        with SessionLocal() as session:
+            sub_price = get_price(session, "subscription_month")
+            user = get_or_create_user(session, telegram_id=message.from_user.id, username=message.from_user.username)
+            user.is_subscribed = True
+            user.subscription_until = datetime.utcnow() + timedelta(days=30)
+            session.commit()
+
+        await message.answer(
+            "✅ Подписка оформлена на 30 дней!\n"
+            "Теперь при заказе вам не нужно оплачивать разовый вынос — просто выберите «Вынести мусор»."
+        )
+        return
 
     with SessionLocal() as session:
         price = get_price(session, "single_order")
-        user = get_or_create_user(session,
-            telegram_id=message.from_user.id,
-            username=message.from_user.username)
 
-        print("DEBUG USER BEFORE:", user.telegram_id, user.street)  # ← добавили
-
-        user.street = data["street"]
-        user.house_number = data["house_number"]
-        user.entrance = data["entrance"]
-        user.floor = data["floor"]
-        user.room_number = data["room_number"]
-
-        print("DEBUG USER AFTER ASSIGN:", user.telegram_id, user.street)  # ← добавили
-
-        door_text = {
-            "door": "у двери",
-            "in_person": "отдать лично",
-            "concierge": "у консьержа",
-        }.get(data["door_or_concierge"], data["door_or_concierge"])
-
-        order = Order(
-            user_id=user.id,
-            order_type=data["order_type"],
-            pickup_time=data.get("pickup_time"),
-            street=data["street"],
-            house_number=data["house_number"],
-            entrance=data["entrance"],
-            floor=data["floor"],
-            room_number=data["room_number"],
-            door_or_concierge=data["door_or_concierge"],
-            status="new",
-            price=price,
-            is_paid=True,
-        )
-        session.add(order)
-        session.commit()
-        order_id = order.id
-
-        print("DEBUG USER AFTER COMMIT:", user.telegram_id, user.street)  # ← добавили
-
-    admin_text = (
-        f"📥 Новый заказ №{order_id} (оплачен ✅)\n"
-        f"Клиент: @{message.from_user.username or message.from_user.id}\n"
-        f"Тип: {order_type_text}\n"
+    await finalize_order(
+        bot=message.bot,
+        telegram_id=message.from_user.id,
+        username=message.from_user.username,
+        data=data,
+        is_paid=True,
+        price=price,
     )
-    if data["order_type"] == "order_later":
-        admin_text += f"Время: {data['pickup_time']}\n"
-    admin_text += (
-        f"Дом: № {data['house_number']}, подъезд: {data['entrance']}, "
-        f"этаж: {data['floor']}, кв: {data['room_number']}\n"
-        f"Куда положить: {door_text}"
-    )
-
-    admin_messages = {}
-    for admin_id in ADMIN_ID:
-        sent_message = await message.bot.send_message(
-            admin_id, admin_text, reply_markup=get_confirm_order_keyboard(order_id)
-        )
-        admin_messages[str(admin_id)] = sent_message.message_id
-
-    with SessionLocal() as session:
-        order = session.query(Order).filter_by(id=order_id).first()
-        order.admin_messages = json.dumps(admin_messages)
-        session.commit()
 
     await message.answer("Оплата прошла успешно ✅ Заказ отправлен курьеру, ожидайте подтверждения ⏳")
     await state.clear()
@@ -772,3 +867,50 @@ async def change_price_apply(message: Message, state: FSMContext):
 
     await message.answer(f"✅ Цена «{price.label}» обновлена: {new_value}₽")
     await state.clear()
+
+
+@router.message(Command("sendmessage"))
+async def send_message_to_all(message: Message):
+    if message.from_user.id not in ADMIN_ID:
+        return
+
+    text = message.text.replace("/sendmessage", "", 1).strip()
+
+    if not text:
+        await message.answer(
+            "Использование: /sendmessage <текст>\n"
+            "Например: /sendmessage Завтра сервис не работает с 10 до 12 из-за техобслуживания."
+        )
+        return
+
+    with SessionLocal() as session:
+        users = session.query(User).all()
+        telegram_ids = [u.telegram_id for u in users]
+
+    await message.answer(f"Начинаю рассылку {len(telegram_ids)} пользователям...")
+
+    sent = 0
+    blocked = 0
+    failed = 0
+
+    for telegram_id in telegram_ids:
+        try:
+            await message.bot.send_message(telegram_id, text, parse_mode='HTML')
+            sent += 1
+        except TelegramForbiddenError:
+            # пользователь заблокировал бота
+            blocked += 1
+        except TelegramBadRequest:
+            # например, чат не найден
+            failed += 1
+        except Exception:
+            failed += 1
+
+        await asyncio.sleep(0.05)  # ~20 сообщений в секунду — безопасный лимит Telegram
+
+    await message.answer(
+        f"✅ Рассылка завершена.\n"
+        f"Доставлено: {sent}\n"
+        f"Заблокировали бота: {blocked}\n"
+        f"Другие ошибки: {failed}"
+    )
