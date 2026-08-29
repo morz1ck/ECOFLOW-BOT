@@ -869,18 +869,27 @@ async def change_price_apply(message: Message, state: FSMContext):
     await state.clear()
 
 
-@router.message(Command("sendmessage"))
+def is_sendmessage_command(message: Message) -> bool:
+    text = message.text or message.caption or ""
+    return text.startswith("/sendmessage")
+
+
+@router.message(F.func(is_sendmessage_command))
 async def send_message_to_all(message: Message):
     if message.from_user.id not in ADMIN_ID:
         return
 
-    text = message.text.replace("/sendmessage", "", 1).strip()
+    if message.photo:
+        photo_file_id = message.photo[-1].file_id
+        raw_text = message.caption or ""
+    else:
+        photo_file_id = None
+        raw_text = message.text or ""
 
-    if not text:
-        await message.answer(
-            "Использование: /sendmessage <текст>\n"
-            "Например: /sendmessage Завтра сервис не работает с 10 до 12 из-за техобслуживания."
-        )
+    text = raw_text.replace("/sendmessage", "", 1).strip()
+
+    if not text and not photo_file_id:
+        await message.answer("Использование: /sendmessage <текст>, или фото с подписью /sendmessage <текст>")
         return
 
     with SessionLocal() as session:
@@ -895,22 +904,20 @@ async def send_message_to_all(message: Message):
 
     for telegram_id in telegram_ids:
         try:
-            await message.bot.send_message(telegram_id, text, parse_mode='HTML')
+            if photo_file_id:
+                await message.bot.send_photo(telegram_id, photo=photo_file_id, caption=text or None)
+            else:
+                await message.bot.send_message(telegram_id, text)
             sent += 1
         except TelegramForbiddenError:
-            # пользователь заблокировал бота
             blocked += 1
         except TelegramBadRequest:
-            # например, чат не найден
             failed += 1
         except Exception:
             failed += 1
 
-        await asyncio.sleep(0.05)  # ~20 сообщений в секунду — безопасный лимит Telegram
+        await asyncio.sleep(0.05)
 
     await message.answer(
-        f"✅ Рассылка завершена.\n"
-        f"Доставлено: {sent}\n"
-        f"Заблокировали бота: {blocked}\n"
-        f"Другие ошибки: {failed}"
+        f"✅ Рассылка завершена.\nДоставлено: {sent}\nЗаблокировали бота: {blocked}\nДругие ошибки: {failed}"
     )
