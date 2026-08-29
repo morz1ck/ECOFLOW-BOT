@@ -5,7 +5,7 @@ from aiogram.filters import CommandStart
 from aiogram.types import Message
 from dotenv import load_dotenv
 from os import getenv
-from handlers.routes import router
+from handlers import main_router as router
 
 load_dotenv()
 bot = Bot(token=getenv('BOT_TOKEN'))
