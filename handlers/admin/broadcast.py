@@ -1,5 +1,5 @@
 import asyncio
-from aiogram import Router
+from aiogram import Router, F
 from aiogram.filters import Command
 from aiogram.types import Message
 from data_base.models import ADMIN_ID, User
@@ -9,39 +9,31 @@ from aiogram.exceptions import TelegramBadRequest, TelegramForbiddenError
 router = Router()
 
 
-@router.message(Command("sendmessage"))
+def is_sendmessage_command(message: Message) -> bool:
+    text = message.text or message.caption or ""
+    return text.startswith("/sendmessage")
+
+
+@router.message(F.func(is_sendmessage_command))
 async def send_message_to_all(message: Message):
     if message.from_user.id not in ADMIN_ID:
         return
 
-    photo_file_id = None
-    text = None
-
     if message.photo:
-        # Админ прислал фото (возможно, с подписью)
-        photo_file_id = message.photo[-1].file_id  # последний элемент — самое высокое разрешение
-        text = message.caption or ""
+        photo_file_id = message.photo[-1].file_id
+        raw_text = message.caption or ""
     else:
-        # Обычный текст: команда + текст рассылки
-        text = message.text.replace("/sendmessage", "", 1).strip()
+        photo_file_id = None
+        raw_text = message.text or ""
+
+    text = raw_text.replace("/sendmessage", "", 1).strip()
 
     if not text and not photo_file_id:
-        await message.answer(
-            "Использование:\n"
-            "/sendmessage <текст> — просто текст\n"
-            "Или отправьте фото с подписью, начинающейся на /sendmessage"
-        )
+        await message.answer("Использование: /sendmessage <текст>, или фото с подписью /sendmessage <текст>")
         return
 
-    # Если это фото, но подпись не начиналась с команды — тоже нужно проверить
-    if photo_file_id and not (message.caption or "").startswith("/sendmessage"):
-        return  # это фото не для рассылки, а что-то другое — игнорируем
-
-    if photo_file_id:
-        text = text.replace("/sendmessage", "", 1).strip()
-
     with SessionLocal() as session:
-        users = session.query(User).filter_by(is_blocked=False).all()
+        users = session.query(User).all()
         telegram_ids = [u.telegram_id for u in users]
 
     await message.answer(f"Начинаю рассылку {len(telegram_ids)} пользователям...")
@@ -49,7 +41,6 @@ async def send_message_to_all(message: Message):
     sent = 0
     blocked = 0
     failed = 0
-    newly_blocked_ids = []
 
     for telegram_id in telegram_ids:
         try:
@@ -60,7 +51,6 @@ async def send_message_to_all(message: Message):
             sent += 1
         except TelegramForbiddenError:
             blocked += 1
-            newly_blocked_ids.append(telegram_id)
         except TelegramBadRequest:
             failed += 1
         except Exception:
@@ -68,16 +58,6 @@ async def send_message_to_all(message: Message):
 
         await asyncio.sleep(0.05)
 
-    if newly_blocked_ids:
-        with SessionLocal() as session:
-            session.query(User).filter(User.telegram_id.in_(newly_blocked_ids)).update(
-                {"is_blocked": True}, synchronize_session=False
-            )
-            session.commit()
-
     await message.answer(
-        f"✅ Рассылка завершена.\n"
-        f"Доставлено: {sent}\n"
-        f"Заблокировали бота: {blocked}\n"
-        f"Другие ошибки: {failed}"
+        f"✅ Рассылка завершена.\nДоставлено: {sent}\nЗаблокировали бота: {blocked}\nДругие ошибки: {failed}"
     )
