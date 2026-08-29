@@ -129,3 +129,10 @@ def get_tariffs_keyboard(subscribed: bool):
             [InlineKeyboardButton(text="📦 Оформить подписку", callback_data="buy_subscription")]
         ]
     )
+
+
+def get_change_prices_keyboard(prices):
+    buttons = []
+    for p in prices:
+        buttons.append([InlineKeyboardButton(text=f"{p.label}: {p.value}₽", callback_data=f"changeprice:{p.key}")])
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
