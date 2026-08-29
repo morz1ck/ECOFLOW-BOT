@@ -1,9 +1,10 @@
-from handlers import main_router as router
 from forms.user import Form
-from aiogram import F
+from aiogram import F, Router
 from aiogram.types import Message, CallbackQuery
 from aiogram.fsm.context import FSMContext
 from handlers.keyboards import get_streets_keyboard, get_door_keyboard
+
+router = Router()
 
 
 @router.callback_query(Form.address_confirm, F.data == "address_change")

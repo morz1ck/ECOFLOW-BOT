@@ -1,6 +1,5 @@
-from handlers import main_router as router
 from handlers.keyboards import get_change_prices_keyboard
-from aiogram import F
+from aiogram import F, Router
 from aiogram.filters import Command
 from aiogram.types import Message, CallbackQuery
 from aiogram.fsm.context import FSMContext
@@ -8,6 +7,8 @@ from data_base.models import ADMIN_ID, Price
 from data_base.db import SessionLocal
 from data_base.crud import get_all_prices, set_price
 from forms.user import Form
+
+router = Router()
 
 @router.message(Command("changeprices"))
 async def change_prices_command(message: Message):

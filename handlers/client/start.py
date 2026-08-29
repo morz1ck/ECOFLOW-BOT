@@ -1,12 +1,12 @@
-from handlers import main_router as router
 from aiogram.filters import CommandStart, Command
 from aiogram.types import Message, CallbackQuery
 from aiogram.fsm.context import FSMContext
-from aiogram import F
+from aiogram import F, Router
 from data_base.db import SessionLocal
 from data_base.models import Order, User
 from handlers.keyboards import get_main_inline_keyboard
 
+router = Router()
 
 
 @router.message(CommandStart())

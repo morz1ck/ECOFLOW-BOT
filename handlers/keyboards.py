@@ -1,9 +1,4 @@
-from aiogram.types import (
-    Message,
-    CallbackQuery,
-    InlineKeyboardMarkup,
-    InlineKeyboardButton,
-)
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
 STREETS = ['ул. Голландская', 'ул. Ясная', 'ул. Тюльпанов']
 

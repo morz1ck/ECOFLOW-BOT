@@ -1,12 +1,13 @@
 import json
-from handlers import main_router as router
 from handlers.keyboards import get_tariffs_keyboard
-from aiogram import F
+from aiogram import F, Router
 from aiogram.types import CallbackQuery, LabeledPrice, InlineKeyboardButton, InlineKeyboardMarkup
 from data_base.db import SessionLocal
 from data_base.models import User
 from data_base.crud import get_price, has_active_subscription
 from handlers.client.payment import YOOKASSA_TOKEN
+
+router = Router()
 
 @router.callback_query(F.data == 'tariffs')
 async def process_tariffs(callback: CallbackQuery):

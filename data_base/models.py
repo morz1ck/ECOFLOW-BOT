@@ -4,6 +4,9 @@ from datetime import datetime
 
 Base = declarative_base()
 
+ADMIN_ID = [1097519866, 1473358975, 6511035077]
+
+
 class Price(Base):
     __tablename__ = "prices"
     id = Column(Integer, primary_key=True)

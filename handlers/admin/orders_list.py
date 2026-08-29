@@ -1,10 +1,11 @@
-from aiogram import F
+from aiogram import F, Router
 from aiogram.types import Message, CallbackQuery
 from aiogram.filters import Command
-from handlers import main_router as router
 from handlers.keyboards import get_orders_menu_keyboard, get_orders_list_keyboard, get_order_detail_keyboard
 from data_base.models import ADMIN_ID, Order, User
 from data_base.db import SessionLocal
+
+router = Router()
 
 @router.message(Command("orders"))
 async def admin_orders_command(message: Message):

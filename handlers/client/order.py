@@ -1,5 +1,4 @@
-from handlers import main_router as router
-from aiogram import F
+from aiogram import F, Router
 from aiogram.types import CallbackQuery, Message
 from aiogram.fsm.context import FSMContext
 from forms.user import Form
@@ -8,6 +7,8 @@ from handlers.keyboards import (
 from data_base.models import User
 from data_base.db import SessionLocal
 from data_base.crud import has_saved_address, get_price, has_active_subscription
+
+router = Router()
 
 
 async def proceed_to_address_or_door(message: Message, telegram_id: int, state: FSMContext):

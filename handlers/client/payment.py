@@ -1,9 +1,8 @@
 import json
 import os
-from aiogram import F
+from aiogram import F, Router
 from aiogram.types import Message, CallbackQuery, LabeledPrice, PreCheckoutQuery
 from aiogram.fsm.context import FSMContext
-from handlers import main_router as router
 from handlers.keyboards import get_confirm_order_keyboard
 from data_base.db import SessionLocal, get_or_create_user
 from data_base.models import Order, ADMIN_ID, User
@@ -12,6 +11,7 @@ from datetime import datetime, timedelta
 from dotenv import load_dotenv
 from forms.user import Form
 
+router = Router()
 
 load_dotenv()
 YOOKASSA_TOKEN = os.getenv("YOOKASSA_TEST_LIVE")

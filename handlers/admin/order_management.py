@@ -1,10 +1,11 @@
-from aiogram import F
+from aiogram import F, Router
 from aiogram.types import CallbackQuery
-from handlers import main_router as router
 from handlers.keyboards import get_orders_list_keyboard
 from data_base.models import ADMIN_ID, Order, User
 from data_base.db import SessionLocal
 from datetime import datetime
+
+router = Router()
 
 @router.callback_query(F.data.startswith("confirm_out_order:"))
 async def process_accept_order(callback: CallbackQuery):
