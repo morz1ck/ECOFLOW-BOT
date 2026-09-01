@@ -4,7 +4,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram import F, Router
 from data_base.db import SessionLocal
 from data_base.models import Order, User
-from handlers.keyboards import get_main_inline_keyboard
+from handlers.keyboards import get_main_inline_keyboard, get_back_button
 
 router = Router()
 
@@ -44,7 +44,7 @@ async def process_my_orders(callback: CallbackQuery):
             for o in orders:
                 status_emoji = {"new": "🆕", "in_progress": "🚚", "done": "✅", "cancelled": "❌"}.get(o.status, "")
                 text += f"{status_emoji} №{o.id} — {o.created_at.strftime('%d.%m %H:%M')} — {o.status}\n"
-            await callback.message.answer(text)
+            await callback.message.answer(text, reply_markup=get_back_button())
 
     await callback.answer()
 

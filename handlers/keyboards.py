@@ -2,6 +2,11 @@ from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
 STREETS = ['ул. Голландская', 'ул. Ясная', 'ул. Тюльпанов']
 
+BACK_BUTTON = InlineKeyboardButton(text="🔙 В начало", callback_data="go_back")
+
+
+def get_back_button(): return InlineKeyboardMarkup(inline_keyboard=[[BACK_BUTTON]])
+
 def get_main_inline_keyboard():
     return InlineKeyboardMarkup(
         inline_keyboard=[
@@ -55,6 +60,7 @@ def get_orders_menu_keyboard():
         inline_keyboard=[
             [InlineKeyboardButton(text="🚚 Активные заказы", callback_data="admin_orders:active")],
             [InlineKeyboardButton(text="✅ Завершённые заказы", callback_data="admin_orders:done")],
+            [BACK_BUTTON]
         ]
     )
 
