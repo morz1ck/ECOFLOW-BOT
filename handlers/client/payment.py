@@ -103,7 +103,7 @@ async def process_confirm(callback: CallbackQuery, state: FSMContext):
             is_paid=False,
             price=price,
         )
-        await callback.message.answer("Заказ создан по подписке ✅ Ожидайте подтверждения курьера ⏳")
+        await callback.message.answer("Заказ создан по подписке ✅\nОжидайте подтверждения курьера ⏳")
         await state.clear()
         await callback.answer()
         return

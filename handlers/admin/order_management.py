@@ -1,3 +1,4 @@
+import json
 from aiogram import F, Router
 from aiogram.types import CallbackQuery
 from handlers.keyboards import get_orders_list_keyboard
@@ -21,17 +22,36 @@ async def process_accept_order(callback: CallbackQuery):
             await callback.answer("Заказ не найден", show_alert=True)
             return
 
+        if order.status != "new":
+            await callback.answer("Этот заказ уже обработан другим курьером", show_alert=True)
+            return
+
         order.status = "in_progress"
         session.commit()
 
         client = session.query(User).filter_by(id=order.user_id).first()
         client_telegram_id = client.telegram_id
+        admin_messages = json.loads(order.admin_messages or "{}")
+        accepted_by = callback.from_user.username or str(callback.from_user.id)
 
     await callback.bot.send_message(
         client_telegram_id,
         "Курьер принял ваш заказ, скоро будет у вас 🚀",
     )
-    await callback.message.edit_text(callback.message.text + "\n\n✅ Принято в работу")
+
+    updated_text = callback.message.text + f"\n\n✅ Принято в работу курьером @{accepted_by}"
+
+    for admin_id_str, message_id in admin_messages.items():
+        try:
+            await callback.bot.edit_message_text(
+                chat_id=int(admin_id_str),
+                message_id=message_id,
+                text=updated_text,
+                reply_markup=None,  # убираем кнопки у ВСЕХ, включая тех, кто не нажимал
+            )
+        except Exception:
+            pass  # сообщение могло быть удалено вручную — не роняем весь хендлер
+
     await callback.answer("Заказ принят")
 
 @router.callback_query(F.data.startswith("cancel_out_order:"))
