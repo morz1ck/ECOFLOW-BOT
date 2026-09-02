@@ -35,21 +35,50 @@ async def proceed_to_address_or_door(message: Message, telegram_id: int, state: 
         await state.set_state(Form.street)
         await message.answer("Выберите улицу:", reply_markup=get_streets_keyboard())
 
+async def process_order_type_common(message: Message, user_id: int, order_type: str, state: FSMContext):
+    await state.update_data(order_type=order_type)
 
-@router.callback_query(F.data.in_(["order_now", "order_later"]))
-async def process_order_type(callback: CallbackQuery, state: FSMContext):
-    await state.update_data(order_type=callback.data)
-
-    if callback.data == "order_later":
+    if order_type == "order_later":
         await state.set_state(Form.time)
-        await callback.message.answer(
+        await message.answer(
             "Укажите время, когда необходимо забрать пакет.\n"
             "Например: 14:00."
         )
         return
 
-    await proceed_to_address_or_door(callback.message, callback.from_user.id, state)
+    await proceed_to_address_or_door(
+        message,
+        user_id,
+        state
+    )
+
+@router.callback_query(F.data.in_(["order_now", "order_later"]))
+async def process_order_type(
+    callback: CallbackQuery,
+    state: FSMContext
+):
+    await process_order_type_common(
+        callback.message,
+        callback.from_user.id,
+        callback.data,
+        state
+    )
+
     await callback.answer()
+
+@router.message(F.text.in_(["🗑 Вынести мусор сейчас", "🕐 Заказать на время"]))
+async def process_order_type_reply(message: Message, state: FSMContext):
+    order_type = {
+        "🗑 Вынести мусор сейчас": "order_now",
+        "🕐 Заказать на время": "order_later",
+    }[message.text]
+
+    await process_order_type_common(
+        message,
+        message.from_user.id,
+        order_type,
+        state
+    )
 
 
 @router.message(Form.time)

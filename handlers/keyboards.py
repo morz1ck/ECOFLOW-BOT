@@ -1,11 +1,21 @@
-from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.types import (
+    InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardMarkup, KeyboardButton)
 
 STREETS = ['ул. Голландская', 'ул. Ясная', 'ул. Тюльпанов']
 
-BACK_BUTTON = InlineKeyboardButton(text="🔙 В начало", callback_data="go_back")
 
+def get_main_reply_keyboard():
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="🗑 Вынести мусор сейчас")],
+            [KeyboardButton(text="🕐 Заказать на время")],
+            [KeyboardButton(text="📦 Мои заказы")],
+            [KeyboardButton(text="ℹ️ Как это работает")],
+            [KeyboardButton(text="💰 Тарифы")],
+            [KeyboardButton(text="📦 Подписка")]
+        ], resize_keyboard=True, input_field_placeholder='Выберите действие...'
+    )
 
-def get_back_button(): return InlineKeyboardMarkup(inline_keyboard=[[BACK_BUTTON]])
 
 def get_main_inline_keyboard():
     return InlineKeyboardMarkup(
@@ -57,7 +67,6 @@ def get_orders_menu_keyboard():
         inline_keyboard=[
             [InlineKeyboardButton(text="🚚 Активные заказы", callback_data="admin_orders:active")],
             [InlineKeyboardButton(text="✅ Завершённые заказы", callback_data="admin_orders:done")],
-            [BACK_BUTTON]
         ]
     )
 
@@ -125,7 +134,6 @@ def get_tariffs_keyboard(subscribed: bool):
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [InlineKeyboardButton(text="📦 Оформить подписку", callback_data="buy_subscription")],
-            [BACK_BUTTON]
         ]
     )
 

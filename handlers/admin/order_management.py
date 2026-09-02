@@ -1,6 +1,6 @@
 from aiogram import F, Router
 from aiogram.types import CallbackQuery
-from handlers.keyboards import get_orders_list_keyboard, get_back_button
+from handlers.keyboards import get_orders_list_keyboard
 from data_base.models import ADMIN_ID, Order, User
 from data_base.db import SessionLocal
 from datetime import datetime
@@ -95,7 +95,7 @@ async def complete_order(callback: CallbackQuery):
         client_telegram_id = client.telegram_id
 
     await callback.bot.send_message(client_telegram_id,
-        "✅ Ваш заказ выполнен. Спасибо, что пользуетесь ЭкоПотоком!", reply_markup=get_back_button()
+        "✅ Ваш заказ выполнен. Спасибо, что пользуетесь ЭкоПотоком!"
     )
 
     with SessionLocal() as session:
