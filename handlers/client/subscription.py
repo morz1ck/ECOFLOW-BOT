@@ -1,5 +1,5 @@
 import json
-from handlers.keyboards import get_tariffs_keyboard
+from handlers.keyboards import get_tariffs_keyboard, get_back_button, BACK_BUTTON
 from aiogram import F, Router
 from aiogram.types import CallbackQuery, LabeledPrice, InlineKeyboardButton, InlineKeyboardMarkup
 from data_base.db import SessionLocal
@@ -77,13 +77,14 @@ async def subscription_status(callback: CallbackQuery):
 
     if subscribed:
         until = user.subscription_until.strftime('%d.%m.%Y')
-        await callback.message.answer(f"✅ У вас активна подписка до {until}")
+        await callback.message.answer(f"✅ У вас активна подписка до {until}", reply_markup=get_back_button())
     else:
         with SessionLocal() as session:
             sub_price = get_price(session, "subscription_month")
         keyboard = InlineKeyboardMarkup(
-            inline_keyboard=[[InlineKeyboardButton(text="📦 Купить подписку", callback_data="buy_subscription")]]
-        )
+            inline_keyboard=[
+                [InlineKeyboardButton(text="📦 Купить подписку", callback_data="buy_subscription")], 
+                [BACK_BUTTON]])
         await callback.message.answer(
             f"У вас пока нет подписки.\n\n📦 Месячная подписка — {sub_price}₽",
             reply_markup=keyboard,

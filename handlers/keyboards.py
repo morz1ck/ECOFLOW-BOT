@@ -49,10 +49,7 @@ def get_confirm_order_keyboard(order_id: int):
 
 def cancel_key():
     return InlineKeyboardMarkup(
-        inline_keyboard=[
-            [InlineKeyboardButton(text="Отменить", callback_data="cancel")],
-        ]
-    )
+        inline_keyboard=[[InlineKeyboardButton(text="Отменить", callback_data="cancel")],])
 
 
 def get_orders_menu_keyboard():
@@ -127,7 +124,8 @@ def get_tariffs_keyboard(subscribed: bool):
         return None
     return InlineKeyboardMarkup(
         inline_keyboard=[
-            [InlineKeyboardButton(text="📦 Оформить подписку", callback_data="buy_subscription")]
+            [InlineKeyboardButton(text="📦 Оформить подписку", callback_data="buy_subscription")],
+            [BACK_BUTTON]
         ]
     )
 
