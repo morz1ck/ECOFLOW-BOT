@@ -71,6 +71,22 @@ def get_orders_menu_keyboard():
     )
 
 
+def get_trash_type_keyboard():
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="🗑 Обычный мусор", callback_data="trash_regular")],
+            [InlineKeyboardButton(text="📦 Крупногабаритный", callback_data="trash_large")],
+        ]
+    )
+
+def get_tariffs_keyboard(subscribed_regular: bool, subscribed_large: bool):
+    buttons = []
+    if not subscribed_regular:
+        buttons.append([InlineKeyboardButton(text="📦 Оформить «Пакет в день»", callback_data="buy_subscription")])
+    if not subscribed_large:
+        buttons.append([InlineKeyboardButton(text="🛋 Оформить «Крупногабарит»", callback_data="buy_large_subscription")])
+    return InlineKeyboardMarkup(inline_keyboard=buttons) if buttons else None
+
 def get_orders_list_keyboard(orders, category):
     buttons = []
     for o in orders:
@@ -128,14 +144,41 @@ def get_address_confirm_keyboard():
         ]
     )
 
-def get_tariffs_keyboard(subscribed: bool):
-    if subscribed:
-        return None
-    return InlineKeyboardMarkup(
-        inline_keyboard=[
-            [InlineKeyboardButton(text="📦 Оформить подписку", callback_data="buy_subscription")],
-        ]
-    )
+def get_tariffs_keyboard(subscribed_regular, subscribed_large):
+
+    buttons = []
+
+    if subscribed_regular:
+        buttons.append([
+            InlineKeyboardButton(
+                text="✅ Обычный мусор — подписка активна",
+                callback_data="subscription_status"
+            )
+        ])
+    else:
+        buttons.append([
+            InlineKeyboardButton(
+                text="📦 Подписка на обычный мусор",
+                callback_data="buy_subscription"
+            )
+        ])
+
+    if subscribed_large:
+        buttons.append([
+            InlineKeyboardButton(
+                text="✅ Крупный мусор — подписка активна",
+                callback_data="large_subscription_status"
+            )
+        ])
+    else:
+        buttons.append([
+            InlineKeyboardButton(
+                text="📦 Подписка на крупный мусор",
+                callback_data="buy_large_subscription"
+            )
+        ])
+
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 
 def get_change_prices_keyboard(prices):

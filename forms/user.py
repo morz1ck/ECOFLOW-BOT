@@ -9,3 +9,6 @@ class Form(StatesGroup):
     door_or_concierge = State()
     confirm = State()
     new_price = State()
+
+    trash_type = State()
+    weight = State()

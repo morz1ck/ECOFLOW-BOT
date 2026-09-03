@@ -29,6 +29,9 @@ class User(Base):
     is_subscribed = Column(Boolean, default=False)
     subscription_until = Column(DateTime, nullable=True)
 
+    is_subscribed_large = Column(Boolean, default=False)
+    subscription_until_large = Column(DateTime, nullable=True)
+
 class Order(Base):
     __tablename__ = "orders"
     id = Column(Integer, primary_key=True)
@@ -47,5 +50,7 @@ class Order(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
     completed_at = Column(DateTime, nullable=True)
     admin_messages = Column(String, nullable=True)
+    trash_type = Column(String, default='regular')
+    weight = Column(String, nullable=True)
 
     user = relationship("User")

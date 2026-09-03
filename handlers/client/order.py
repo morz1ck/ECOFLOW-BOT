@@ -4,10 +4,10 @@ from aiogram.fsm.context import FSMContext
 from forms.user import Form
 from handlers.keyboards import (
     get_address_confirm_keyboard, get_streets_keyboard, 
-    get_door_keyboard, get_confirm_keyboard)
+    get_door_keyboard, get_confirm_keyboard, get_trash_type_keyboard)
 from data_base.models import User
 from data_base.db import SessionLocal
-from data_base.crud import has_saved_address, get_price, has_active_subscription
+from data_base.crud import has_saved_address, get_price, has_active_subscription, has_active_large_subscription, calculate_order_price
 
 router = Router()
 
@@ -37,20 +37,10 @@ async def proceed_to_address_or_door(message: Message, telegram_id: int, state: 
 
 async def process_order_type_common(message: Message, user_id: int, order_type: str, state: FSMContext):
     await state.update_data(order_type=order_type)
+    await state.set_state(Form.trash_type)
 
-    if order_type == "order_later":
-        await state.set_state(Form.time)
-        await message.answer(
-            "Укажите время, когда необходимо забрать пакет.\n"
-            "Например: 14:00."
-        )
-        return
-
-    await proceed_to_address_or_door(
-        message,
-        user_id,
-        state
-    )
+    await message.answer("Выберите тип мусора:", reply_markup=get_trash_type_keyboard())
+    
 
 @router.callback_query(F.data.in_(["order_now", "order_later"]))
 async def process_order_type(
@@ -80,6 +70,67 @@ async def process_order_type_reply(message: Message, state: FSMContext):
         state
     )
 
+@router.callback_query(Form.trash_type, F.data.in_(["trash_regular", "trash_large"]))
+async def process_trash_type( callback: CallbackQuery, state: FSMContext):
+    trash_type = ("regular" if callback.data == "trash_regular" else "large")
+
+    await state.update_data(trash_type=trash_type)
+    data = await state.get_data()
+
+    if trash_type == "large":
+        await state.set_state(Form.weight)
+
+        await callback.message.answer("Укажите вес мусора в кг (например: 12).\n"
+            "Максимальный вес для выноса — 30 кг.")
+
+        await callback.answer()
+        return
+
+    if data["order_type"] == "order_later":
+        await state.set_state(Form.time)
+
+        await callback.message.answer("Укажите время, когда необходимо забрать пакет.\n"
+            "Например: 14:00."
+        )
+    else:
+        await proceed_to_address_or_door(
+            callback.message,
+            callback.from_user.id,
+            state
+        )
+
+    await callback.answer()
+
+@router.message(Form.weight)
+async def process_weight(message: Message, state: FSMContext):
+    raw = message.text.strip().replace(",", ".")
+
+    try: weight = float(raw)
+    except ValueError:
+        await message.answer("Введите вес числом, например: 12 или 7.5")
+        return
+
+    if weight < 5:
+        await message.answer("Минимальный вес крупногабаритного мусора — 5 кг.")
+        return
+
+    if weight > 30:
+        await message.answer("Максимальный вес для выноса — 30 кг.\n"
+            "Для более крупных объёмов обратитесь в поддержку.")
+        return
+
+    await state.update_data(weight=weight)
+
+    data = await state.get_data()
+
+    if data["order_type"] == "order_later":
+        await state.set_state(Form.time)
+
+        await message.answer("Укажите время, когда необходимо забрать пакет.\n"
+            "Например: 14:00."
+        )
+    else:
+        await proceed_to_address_or_door(message, message.from_user.id, state)
 
 @router.message(Form.time)
 async def process_time(message: Message, state: FSMContext):
@@ -124,13 +175,16 @@ async def process_address_rest(message: Message, state: FSMContext):
 @router.callback_query(Form.door_or_concierge, F.data.in_(["door", "in_person", "concierge"]))
 async def process_door_or_concierge(callback: CallbackQuery, state: FSMContext):
     await state.update_data(door_or_concierge=callback.data)
-
-    with SessionLocal() as session:
-        price = get_price(session, "single_order")
-        user = session.query(User).filter_by(telegram_id=callback.from_user.id).first()
-        subscribed = has_active_subscription(user)
+    await state.set_state(Form.confirm)
 
     data = await state.get_data()
+
+    with SessionLocal() as session:
+        user = session.query(User).filter_by(telegram_id=callback.from_user.id).first()
+        subscribed_regular = has_active_subscription(user)
+        subscribed_large = has_active_large_subscription(user)
+        price, is_free = calculate_order_price(session, data, subscribed_regular, subscribed_large)
+
     order_type_text = "сейчас" if data["order_type"] == "order_now" else "на время"
     door_text = {
         "door": "у двери",
@@ -138,7 +192,12 @@ async def process_door_or_concierge(callback: CallbackQuery, state: FSMContext):
         "concierge": "у консьержа",
     }.get(data["door_or_concierge"], data["door_or_concierge"])
 
-    text = f"Проверьте заказ:\nТип: {order_type_text}\n"
+    trash_type_text = (
+        "Обычный мусор" if data.get("trash_type", "regular") == "regular"
+        else f"Крупногабаритный, вес: {data['weight']} кг"
+    )
+
+    text = f"Проверьте заказ:\nТип: {order_type_text}\nМусор: {trash_type_text}\n"
     if data["order_type"] == "order_later":
         text += f"Время: {data['pickup_time']}\n"
     text += (
@@ -147,14 +206,7 @@ async def process_door_or_concierge(callback: CallbackQuery, state: FSMContext):
         f"этаж: {data['floor']}, кв: {data['room_number']}\n"
         f"Куда положить: {door_text}\n\n"
     )
+    text += "📦 Бесплатно по подписке" if is_free else f"Стоимость: {price:g}₽"
 
-    if subscribed:
-        text += "📦 У вас активна подписка — вынос бесплатный"
-        await state.set_state(Form.confirm)
-        await callback.message.answer(text, reply_markup=get_confirm_keyboard())
-    else:
-        text += f"Стоимость: {price}₽"
-        await state.set_state(Form.confirm)
-        await callback.message.answer(text, reply_markup=get_confirm_keyboard())
-
+    await callback.message.answer(text, reply_markup=get_confirm_keyboard())
     await callback.answer()

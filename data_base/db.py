@@ -21,8 +21,11 @@ def get_or_create_user(session, telegram_id: int, username: Optional[str]):
 
 DEFAULT_PRICES = {
     "single_order": {"value": 150, "label": "Разовый вынос мусора"},
-    "subscription_month": {"value": 1990, "label": "Месячная подписка"},
-}
+    "subscription_month": {"value": 1990, "label": "Подписка «Пакет в день»"},
+    "large_subscription": {"value": 2990, "label": "Подписка «Крупногабарит»"},
+    "large_order_base": {"value": 200, "label": "Крупногабарит, база (до 5 кг)"},
+    "large_order_per_kg": {"value": 40, "label": "Доплата за кг свыше 5 кг"},
+    }
 
 def init_default_prices():
     with SessionLocal() as session:
