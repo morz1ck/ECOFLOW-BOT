@@ -95,8 +95,28 @@ async def buy_subscription(callback: CallbackQuery):
     await callback.answer()
 
 
+@router.message(F.text == '📦 Подписка')
+async def subscription_status_reply(message: Message):
+    with SessionLocal() as session:
+        user = session.query(User).filter_by(telegram_id=message.from_user.id).first()
+        subscribed = has_active_subscription(user)
+
+    if subscribed:
+        until = user.subscription_until.strftime('%d.%m.%Y')
+        await message.answer(f"✅ У вас активна подписка до {until}")
+    else:
+        with SessionLocal() as session:
+            sub_price = get_price(session, "subscription_month")
+        keyboard = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [InlineKeyboardButton(text="📦 Купить подписку", callback_data="buy_subscription")]])
+        await message.answer(f"У вас пока нет подписки.\n\n📦 Месячная подписка — {sub_price}₽",
+            reply_markup=keyboard,
+        )
+
+
 @router.callback_query(F.data == 'subscription_status')
-async def subscription_status(callback: CallbackQuery):
+async def subscription_status_reply(callback: CallbackQuery):
     with SessionLocal() as session:
         user = session.query(User).filter_by(telegram_id=callback.from_user.id).first()
         subscribed = has_active_subscription(user)

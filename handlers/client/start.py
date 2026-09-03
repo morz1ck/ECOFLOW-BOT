@@ -5,8 +5,8 @@ from aiogram import F, Router
 from data_base.db import SessionLocal
 from data_base.models import Order, User
 from handlers.keyboards import get_main_inline_keyboard, get_main_reply_keyboard
-router = Router()
 
+router = Router()
 
 @router.callback_query(F.data == "go_back")
 async def cmd_back_start(callback: CallbackQuery, state: FSMContext):
@@ -19,8 +19,6 @@ async def cmd_back_start(callback: CallbackQuery, state: FSMContext):
         reply_markup=get_main_inline_keyboard(), parse_mode='HTML', disable_web_page_preview=True
     )
 
-
-
 @router.message(CommandStart())
 async def cmd_start(message: Message, state: FSMContext):
     await state.clear()
@@ -31,7 +29,6 @@ async def cmd_start(message: Message, state: FSMContext):
         "‼️ Если у Вас возникли вопросы или проблемы с сервисом, обратитесь в нашу <a href='t.me/ecoflowsupport'>поддержку</a>.",
         reply_markup=get_main_reply_keyboard(), parse_mode='HTML', disable_web_page_preview=True
     )
-
 
 @router.callback_query(F.data == 'my_orders')
 async def process_my_orders_inline(callback: CallbackQuery, state: FSMContext):
@@ -69,7 +66,6 @@ async def process_my_orders_inline(callback: CallbackQuery, state: FSMContext):
 
             await callback.message.answer(text)
 
-
 @router.message(F.text == "📦 Мои заказы")
 async def process_my_orders_reply(message: Message, state: FSMContext):
     await state.clear()
@@ -105,7 +101,6 @@ async def process_my_orders_reply(message: Message, state: FSMContext):
                 )
 
             await message.answer(text)
-
 
 @router.callback_query(F.data == 'how_it_works')
 async def process_how_it_work_inline(callback: CallbackQuery):
