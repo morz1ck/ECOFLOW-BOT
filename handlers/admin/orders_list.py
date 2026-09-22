@@ -40,7 +40,7 @@ async def admin_orders_list(callback: CallbackQuery):
             .limit(20)
             .all()
         )
-
+ 
         if not orders:
             title = "🚚 Активные заказы" if category == "active" else "✅ Завершённые заказы"
             await callback.message.edit_text(
